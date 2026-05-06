@@ -17,6 +17,8 @@ class Destination extends Model
         'rating'       => 'float',
         'review_count' => 'integer',
         'is_active'    => 'boolean',
+        'latitude'     => 'float',
+        'longitude'     => 'float',
     ];
 
     public function reviews()
