@@ -23,7 +23,7 @@ Route::get('/destinations',          [DestinationController::class, 'index']);
 Route::get('/destinations/{id}',     [DestinationController::class, 'show']);
 Route::get('/categories',            [DestinationController::class, 'categories']);
 
-// ─── REVIEWS (public — baca, tulis butuh login) ──────────────────────────────
+// ─── REVIEWS (public baca) ───────────────────────────────────────────────────
 Route::get('/destinations/{id}/reviews', [ReviewController::class, 'index']);
 
 // ─── PROTECTED (login required) ──────────────────────────────────────────────
@@ -34,13 +34,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me',      [AuthController::class, 'me']);
 
     // Favorites
-    Route::get('/favorites',              [FavoriteController::class, 'index']);
-    Route::get('/favorites/ids',          [FavoriteController::class, 'ids']);
-    Route::post('/favorites/{id}',        [FavoriteController::class, 'store']);
-    Route::delete('/favorites/{id}',      [FavoriteController::class, 'destroy']);
+    Route::get('/favorites',         [FavoriteController::class, 'index']);
+    Route::get('/favorites/ids',     [FavoriteController::class, 'ids']);
+    Route::post('/favorites/{id}',   [FavoriteController::class, 'store']);
+    Route::delete('/favorites/{id}', [FavoriteController::class, 'destroy']);
 
-    // Reviews (write)
+    // Reviews — tulis & laporkan
     Route::post('/destinations/{id}/reviews', [ReviewController::class, 'store']);
+    Route::post('/reviews/{id}/report',       [ReviewController::class, 'report']);
 
     // Business Claims
     Route::post('/claims', [BusinessClaimController::class, 'store']);
@@ -56,17 +57,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/users/{id}', [AdminController::class, 'deleteUser']);
 
         // Destinations CRUD
-        Route::post('/destinations',       [DestinationController::class, 'store']);
-        Route::put('/destinations/{id}',   [DestinationController::class, 'update']);
-        Route::delete('/destinations/{id}',[DestinationController::class, 'destroy']);
+        Route::post('/destinations',        [DestinationController::class, 'store']);
+        Route::post('/destinations/{id}',   [DestinationController::class, 'update']); // POST karena FormData (foto)
+        Route::delete('/destinations/{id}', [DestinationController::class, 'destroy']);
 
         // Claims management
-        Route::get('/claims',         [BusinessClaimController::class, 'index']);
-        Route::patch('/claims/{id}',  [BusinessClaimController::class, 'update']);
+        Route::get('/claims',        [BusinessClaimController::class, 'index']);
+        Route::patch('/claims/{id}', [BusinessClaimController::class, 'update']);
 
         // Reviews management
-        Route::get('/reviews',                    [AdminController::class, 'reviews']);
-        Route::delete('/reviews/{id}',            [ReviewController::class, 'destroy']);
-        Route::patch('/reviews/{id}/report',      [AdminController::class, 'toggleReport']);
+        Route::get('/reviews',               [AdminController::class, 'reviews']);
+        Route::delete('/reviews/{id}',       [ReviewController::class, 'destroy']);
+        Route::patch('/reviews/{id}/report', [AdminController::class, 'toggleReport']);
     });
 });

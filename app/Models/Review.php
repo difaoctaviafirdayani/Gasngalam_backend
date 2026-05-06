@@ -1,11 +1,22 @@
 <?php
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
 class Review extends Model
 {
-    protected $fillable = ['user_id', 'destination_id', 'rating', 'comment', 'is_reported'];
+    protected $fillable = [
+        'user_id', 'destination_id',
+        'rating', 'comment',
+        'photo_url',
+        'is_reported',
+    ];
+
+    protected $casts = [
+        'is_reported' => 'boolean',
+        'rating'      => 'integer',
+    ];
 
     public function user()
     {
