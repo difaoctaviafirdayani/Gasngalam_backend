@@ -10,17 +10,19 @@ use Illuminate\Support\Facades\Storage;
 class BusinessClaimController extends Controller
 {
     // GET /api/admin/claims
-    public function index()
+    public function index(Request $request)
     {
-        $claims = BusinessClaim::with(['user', 'destination'])
-            ->orderByDesc('created_at')
+        $claims = BusinessClaim::with(['destination:id,name', 'user:id,name,email'])
+            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
+            ->latest()
             ->get()
-            ->map(function ($c) {
-                $c->document_url = $c->document_path
-                    ? asset('storage/' . $c->document_path)
-                    : null;
-                return $c;
+            ->map(function ($claim) {
+                if ($claim->document_path) {
+                    $claim->document_url = asset('storage/' . $claim->document_path);
+                }
+                return $claim;
             });
+
         return response()->json($claims);
     }
 
@@ -30,15 +32,28 @@ class BusinessClaimController extends Controller
         $request->validate([
             'destination_id' => 'required|exists:destinations,id',
             'full_name'      => 'required|string|max:255',
-            'email'          => 'required|email',
+            'email'          => 'required|email|max:255',
             'phone'          => 'required|string|max:20',
-            'description'    => 'required|string',
-            'document'       => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+            'description'    => 'required|string|min:5',
+            'document'       => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
         ]);
 
-        $docPath = null;
+        // Cek sudah pernah klaim destinasi yang sama
+        $exists = BusinessClaim::where('user_id', $request->user()->id)
+            ->where('destination_id', $request->destination_id)
+            ->whereIn('status', ['pending', 'approved'])
+            ->exists();
+
+        if ($exists) {
+            return response()->json([
+                'message' => 'Anda sudah memiliki klaim untuk destinasi ini.',
+            ], 422);
+        }
+
+        // Simpan file jika ada
+        $documentPath = null;
         if ($request->hasFile('document')) {
-            $docPath = $request->file('document')->store('claims', 'public');
+            $documentPath = $request->file('document')->store('claims', 'public');
         }
 
         $claim = BusinessClaim::create([
@@ -48,11 +63,11 @@ class BusinessClaimController extends Controller
             'email'          => $request->email,
             'phone'          => $request->phone,
             'description'    => $request->description,
-            'document_path'  => $docPath,
+            'document_path'  => $documentPath,
             'status'         => 'pending',
         ]);
 
-        return response()->json($claim, 201);
+        return response()->json($claim->load(['destination:id,name', 'user:id,name']), 201);
     }
 
     // PATCH /api/admin/claims/{id}
