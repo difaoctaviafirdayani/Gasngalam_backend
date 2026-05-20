@@ -7,6 +7,7 @@ use App\Models\Destination;
 use App\Models\DestinationPhoto;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
 
 class DestinationController extends Controller
 {
@@ -53,7 +54,8 @@ class DestinationController extends Controller
             $query->orderBy($sort, $dir === 'asc' ? 'asc' : 'desc');
         }
 
-        $destinations = $query->with('photos')->get();
+       $hasPhotosTable = Schema::hasTable('destination_photos');
+$destinations = $hasPhotosTable ? $query->with('photos')->get() : $query->get();
 
         // Filter harga min/max di PHP level (hindari REGEXP_REPLACE error)
         if ($request->filled('price_min') || $request->filled('price_max')) {

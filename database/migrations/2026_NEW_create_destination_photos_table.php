@@ -8,12 +8,20 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Kolom lat/lng sudah dibuat di migration 2026_05_06_000001
-        // Migration ini sengaja dikosongkan untuk menghindari duplikat kolom
+        if (!Schema::hasTable('destination_photos')) {
+            Schema::create('destination_photos', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('destination_id')->constrained('destinations')->onDelete('cascade');
+                $table->string('photo_url');
+                $table->string('caption')->nullable();
+                $table->integer('sort_order')->default(0);
+                $table->timestamps();
+            });
+        }
     }
 
     public function down(): void
     {
-        // Tidak ada yang perlu di-rollback
+        Schema::dropIfExists('destination_photos');
     }
 };
