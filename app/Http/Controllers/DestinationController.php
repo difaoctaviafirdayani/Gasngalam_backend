@@ -1,21 +1,17 @@
 <?php
-
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Destination;
+use App\Models\DestinationPhoto;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class DestinationController extends Controller
 {
     const CATEGORY_ORDER = [
-        'Wisata Budaya',
-        'Taman Kota',
-        'Wisata Edukasi',
-        'Kuliner Legendaris',
-        'Wisata Hiburan',
-        'Wisata Alam',
+        'Wisata Budaya', 'Taman Kota', 'Wisata Edukasi',
+        'Kuliner & Belanja', 'Wisata Hiburan', 'Wisata Alam',
     ];
 
     public function index(Request $request)
@@ -35,6 +31,32 @@ class DestinationController extends Controller
             });
         }
 
+        // Filter harga tiket
+        if ($request->filled('price_min') || $request->filled('price_max')) {
+            // ticket_price disimpan sebagai string, cast ke angka pakai CAST MySQL
+            if ($request->filled('price_min')) {
+                $query->whereRaw("CAST(REGEXP_REPLACE(ticket_price, '[^0-9]', '') AS UNSIGNED) >= ?", [(int)$request->price_min]);
+            }
+            if ($request->filled('price_max')) {
+                $query->whereRaw("CAST(REGEXP_REPLACE(ticket_price, '[^0-9]', '') AS UNSIGNED) <= ?", [(int)$request->price_max]);
+            }
+        }
+
+        // Filter gratis
+        if ($request->filled('free') && $request->free == '1') {
+            $query->where(function($q) {
+                $q->where('ticket_price', 'like', '%gratis%')
+                  ->orWhere('ticket_price', 'like', '%0%')
+                  ->orWhereNull('ticket_price');
+            });
+        }
+
+        // Filter jam buka (open_hours berisi string seperti "08:00 - 17:00")
+        if ($request->filled('open_now')) {
+            // Kita filter destinasi yang open_hours tidak null/kosong
+            $query->whereNotNull('open_hours')->where('open_hours', '!=', '-');
+        }
+
         $sort = $request->sort ?? 'rating';
         $dir  = $request->dir  ?? 'desc';
         $allowedSorts = ['rating', 'review_count', 'name'];
@@ -42,7 +64,7 @@ class DestinationController extends Controller
             $query->orderBy($sort, $dir === 'asc' ? 'asc' : 'desc');
         }
 
-        $destinations = $query->get();
+        $destinations = $query->with('photos')->get();
 
         $userLat = $request->filled('lat') ? (float) $request->lat : null;
         $userLng = $request->filled('lng') ? (float) $request->lng : null;
@@ -52,24 +74,25 @@ class DestinationController extends Controller
                 if ($d->lat && $d->lng) {
                     $d->distance_km = round($this->haversine($userLat, $userLng, $d->lat, $d->lng), 1);
                     $d->distance    = $d->distance_km . ' km';
-                } else {
-                    $d->distance_km = null;
-                    $d->distance    = null;
                 }
                 return $d;
             });
-
             if ($request->sort === 'nearest') {
-                $destinations = $destinations->sortBy(function ($d) {
-                    return $d->distance_km ?? PHP_INT_MAX;
-                })->values();
+                $destinations = $destinations->sortBy('distance_km')->values();
             }
         }
 
         $destinations = $destinations->map(function ($d) {
-            $d->photo_full_url = $d->photo_url
-                ? asset('storage/' . $d->photo_url)
-                : null;
+            $d->photo_full_url = $d->photo_url ? asset('storage/' . $d->photo_url) : null;
+            // Attach gallery photos dengan full URL
+            $d->gallery = $d->photos->map(function ($p) {
+                return [
+                    'id'        => $p->id,
+                    'url'       => asset('storage/' . $p->photo_url),
+                    'caption'   => $p->caption,
+                    'sort_order'=> $p->sort_order,
+                ];
+            });
             return $d;
         });
 
@@ -78,28 +101,25 @@ class DestinationController extends Controller
 
     public function show($id)
     {
-        $d = Destination::findOrFail($id);
+        $d = Destination::with('photos')->findOrFail($id);
         $d->photo_full_url = $d->photo_url ? asset('storage/' . $d->photo_url) : null;
+        $d->gallery = $d->photos->map(function ($p) {
+            return [
+                'id'        => $p->id,
+                'url'       => asset('storage/' . $p->photo_url),
+                'caption'   => $p->caption,
+                'sort_order'=> $p->sort_order,
+            ];
+        });
         return response()->json($d);
     }
 
     public function categories()
     {
         $fromDb = Destination::where('is_active', true)
-            ->distinct()
-            ->pluck('category')
-            ->filter()
-            ->values()
-            ->toArray();
-
-        $ordered = collect(self::CATEGORY_ORDER)
-            ->filter(fn($c) => in_array($c, $fromDb))
-            ->values();
-
-        $rest = collect($fromDb)
-            ->filter(fn($c) => !in_array($c, self::CATEGORY_ORDER))
-            ->values();
-
+            ->distinct()->pluck('category')->filter()->values()->toArray();
+        $ordered = collect(self::CATEGORY_ORDER)->filter(fn($c) => in_array($c, $fromDb))->values();
+        $rest = collect($fromDb)->filter(fn($c) => !in_array($c, self::CATEGORY_ORDER))->values();
         return response()->json($ordered->merge($rest)->values());
     }
 
@@ -118,6 +138,7 @@ class DestinationController extends Controller
             'lat'          => 'nullable|numeric',
             'lng'          => 'nullable|numeric',
             'photo'        => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
+            'gallery.*'    => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
         ]);
 
         $photoPath = null;
@@ -144,17 +165,26 @@ class DestinationController extends Controller
             'gradient'     => null,
         ]);
 
-        $destination->photo_full_url = $destination->photo_url
-            ? asset('storage/' . $destination->photo_url)
-            : null;
+        // Upload gallery photos
+        if ($request->hasFile('gallery')) {
+            foreach ($request->file('gallery') as $i => $file) {
+                $path = $file->store('destinations/gallery', 'public');
+                DestinationPhoto::create([
+                    'destination_id' => $destination->id,
+                    'photo_url'      => $path,
+                    'sort_order'     => $i,
+                ]);
+            }
+        }
 
+        $destination->photo_full_url = $destination->photo_url
+            ? asset('storage/' . $destination->photo_url) : null;
         return response()->json($destination, 201);
     }
 
     public function update(Request $request, $id)
     {
         $destination = Destination::findOrFail($id);
-
         $request->validate([
             'name'         => 'sometimes|required|string|max:255',
             'category'     => 'sometimes|required|string|max:100',
@@ -169,38 +199,55 @@ class DestinationController extends Controller
             'lng'          => 'nullable|numeric',
             'is_active'    => 'nullable|boolean',
             'photo'        => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
+            'gallery.*'    => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
         ]);
 
         $data = $request->only([
-            'name', 'category', 'location',
-            'ticket_price', 'open_hours', 'contact', 'social_media',
-            'address', 'description', 'lat', 'lng', 'is_active',
+            'name','category','location','ticket_price','open_hours',
+            'contact','social_media','address','description','lat','lng','is_active',
         ]);
-
         if ($request->hasFile('photo')) {
-            if ($destination->photo_url) {
-                Storage::disk('public')->delete($destination->photo_url);
-            }
+            if ($destination->photo_url) Storage::disk('public')->delete($destination->photo_url);
             $data['photo_url'] = $request->file('photo')->store('destinations', 'public');
         }
-
         $destination->update($data);
 
-        $destination->photo_full_url = $destination->photo_url
-            ? asset('storage/' . $destination->photo_url)
-            : null;
+        // Append gallery photos
+        if ($request->hasFile('gallery')) {
+            $maxOrder = DestinationPhoto::where('destination_id', $destination->id)->max('sort_order') ?? -1;
+            foreach ($request->file('gallery') as $i => $file) {
+                $path = $file->store('destinations/gallery', 'public');
+                DestinationPhoto::create([
+                    'destination_id' => $destination->id,
+                    'photo_url'      => $path,
+                    'sort_order'     => $maxOrder + $i + 1,
+                ]);
+            }
+        }
 
+        $destination->photo_full_url = $destination->photo_url
+            ? asset('storage/' . $destination->photo_url) : null;
         return response()->json($destination);
+    }
+
+    // DELETE /api/admin/destinations/{id}/photos/{photoId}
+    public function deletePhoto($id, $photoId)
+    {
+        $photo = DestinationPhoto::where('destination_id', $id)->where('id', $photoId)->firstOrFail();
+        Storage::disk('public')->delete($photo->photo_url);
+        $photo->delete();
+        return response()->json(['message' => 'Foto dihapus']);
     }
 
     public function destroy($id)
     {
         $destination = Destination::findOrFail($id);
-
-        if ($destination->photo_url) {
-            Storage::disk('public')->delete($destination->photo_url);
+        if ($destination->photo_url) Storage::disk('public')->delete($destination->photo_url);
+        // Hapus semua gallery photos
+        foreach ($destination->photos as $photo) {
+            Storage::disk('public')->delete($photo->photo_url);
         }
-
+        $destination->photos()->delete();
         $destination->delete();
         return response()->json(['message' => 'Destinasi berhasil dihapus']);
     }

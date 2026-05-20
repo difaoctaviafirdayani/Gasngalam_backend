@@ -1,29 +1,19 @@
 <?php
-
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Destination;
+use App\Models\DestinationPhoto;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class DestinationController extends Controller
 {
-    // Urutan kategori yang baku — selalu dalam urutan ini di mana pun
     const CATEGORY_ORDER = [
-        'Wisata Budaya',
-        'Taman Kota',
-        'Wisata Edukasi',
-        'Kuliner & Belanja',
-        'Wisata Hiburan',
-        'Wisata Alam',
+        'Wisata Budaya', 'Taman Kota', 'Wisata Edukasi',
+        'Kuliner & Belanja', 'Wisata Hiburan', 'Wisata Alam',
     ];
 
-    /**
-     * GET /api/destinations
-     * Ambil semua destinasi aktif; bisa filter kategori, search, sort
-     * Query opsional: lat, lng (float) → hitung jarak real-time dari user
-     */
     public function index(Request $request)
     {
         $query = Destination::query()->where('is_active', true);
@@ -41,6 +31,32 @@ class DestinationController extends Controller
             });
         }
 
+        // Filter harga tiket
+        if ($request->filled('price_min') || $request->filled('price_max')) {
+            // ticket_price disimpan sebagai string, cast ke angka pakai CAST MySQL
+            if ($request->filled('price_min')) {
+                $query->whereRaw("CAST(REGEXP_REPLACE(ticket_price, '[^0-9]', '') AS UNSIGNED) >= ?", [(int)$request->price_min]);
+            }
+            if ($request->filled('price_max')) {
+                $query->whereRaw("CAST(REGEXP_REPLACE(ticket_price, '[^0-9]', '') AS UNSIGNED) <= ?", [(int)$request->price_max]);
+            }
+        }
+
+        // Filter gratis
+        if ($request->filled('free') && $request->free == '1') {
+            $query->where(function($q) {
+                $q->where('ticket_price', 'like', '%gratis%')
+                  ->orWhere('ticket_price', 'like', '%0%')
+                  ->orWhereNull('ticket_price');
+            });
+        }
+
+        // Filter jam buka (open_hours berisi string seperti "08:00 - 17:00")
+        if ($request->filled('open_now')) {
+            // Kita filter destinasi yang open_hours tidak null/kosong
+            $query->whereNotNull('open_hours')->where('open_hours', '!=', '-');
+        }
+
         $sort = $request->sort ?? 'rating';
         $dir  = $request->dir  ?? 'desc';
         $allowedSorts = ['rating', 'review_count', 'name'];
@@ -48,9 +64,8 @@ class DestinationController extends Controller
             $query->orderBy($sort, $dir === 'asc' ? 'asc' : 'desc');
         }
 
-        $destinations = $query->get();
+        $destinations = $query->with('photos')->get();
 
-        // Kalau user kirim koordinat, hitung jarak Haversine (km)
         $userLat = $request->filled('lat') ? (float) $request->lat : null;
         $userLng = $request->filled('lng') ? (float) $request->lng : null;
 
@@ -62,63 +77,52 @@ class DestinationController extends Controller
                 }
                 return $d;
             });
-
-            // Kalau sort=nearest, urutkan berdasarkan jarak
             if ($request->sort === 'nearest') {
                 $destinations = $destinations->sortBy('distance_km')->values();
             }
         }
 
-        // Tambahkan URL foto lengkap
         $destinations = $destinations->map(function ($d) {
-            $d->photo_full_url = $d->photo_url
-                ? asset('storage/' . $d->photo_url)
-                : null;
+            $d->photo_full_url = $d->photo_url ? asset('storage/' . $d->photo_url) : null;
+            // Attach gallery photos dengan full URL
+            $d->gallery = $d->photos->map(function ($p) {
+                return [
+                    'id'        => $p->id,
+                    'url'       => asset('storage/' . $p->photo_url),
+                    'caption'   => $p->caption,
+                    'sort_order'=> $p->sort_order,
+                ];
+            });
             return $d;
         });
 
         return response()->json($destinations);
     }
 
-    /**
-     * GET /api/destinations/{id}
-     */
     public function show($id)
     {
-        $d = Destination::findOrFail($id);
+        $d = Destination::with('photos')->findOrFail($id);
         $d->photo_full_url = $d->photo_url ? asset('storage/' . $d->photo_url) : null;
+        $d->gallery = $d->photos->map(function ($p) {
+            return [
+                'id'        => $p->id,
+                'url'       => asset('storage/' . $p->photo_url),
+                'caption'   => $p->caption,
+                'sort_order'=> $p->sort_order,
+            ];
+        });
         return response()->json($d);
     }
 
-    /**
-     * GET /api/categories
-     * Kembalikan kategori dalam urutan baku; kategori lain di akhir
-     */
     public function categories()
     {
         $fromDb = Destination::where('is_active', true)
-            ->distinct()
-            ->pluck('category')
-            ->filter()
-            ->values()
-            ->toArray();
-
-        // Urutkan sesuai CATEGORY_ORDER, sisanya di belakang
-        $ordered = collect(self::CATEGORY_ORDER)
-            ->filter(fn($c) => in_array($c, $fromDb))
-            ->values();
-
-        $rest = collect($fromDb)
-            ->filter(fn($c) => !in_array($c, self::CATEGORY_ORDER))
-            ->values();
-
+            ->distinct()->pluck('category')->filter()->values()->toArray();
+        $ordered = collect(self::CATEGORY_ORDER)->filter(fn($c) => in_array($c, $fromDb))->values();
+        $rest = collect($fromDb)->filter(fn($c) => !in_array($c, self::CATEGORY_ORDER))->values();
         return response()->json($ordered->merge($rest)->values());
     }
 
-    /**
-     * POST /api/admin/destinations (admin only)
-     * Menerima multipart/form-data karena ada upload foto
-     */
     public function store(Request $request)
     {
         $request->validate([
@@ -134,6 +138,7 @@ class DestinationController extends Controller
             'lat'          => 'nullable|numeric',
             'lng'          => 'nullable|numeric',
             'photo'        => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
+            'gallery.*'    => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
         ]);
 
         $photoPath = null;
@@ -155,27 +160,31 @@ class DestinationController extends Controller
             'lng'          => $request->lng,
             'photo_url'    => $photoPath,
             'is_active'    => true,
-            // emoji & color dihapus dari form, tapi model masih simpan default
             'emoji'        => null,
             'color'        => null,
             'gradient'     => null,
         ]);
 
-        $destination->photo_full_url = $destination->photo_url
-            ? asset('storage/' . $destination->photo_url)
-            : null;
+        // Upload gallery photos
+        if ($request->hasFile('gallery')) {
+            foreach ($request->file('gallery') as $i => $file) {
+                $path = $file->store('destinations/gallery', 'public');
+                DestinationPhoto::create([
+                    'destination_id' => $destination->id,
+                    'photo_url'      => $path,
+                    'sort_order'     => $i,
+                ]);
+            }
+        }
 
+        $destination->photo_full_url = $destination->photo_url
+            ? asset('storage/' . $destination->photo_url) : null;
         return response()->json($destination, 201);
     }
 
-    /**
-     * PUT /api/admin/destinations/{id} (admin only)
-     * Menerima multipart/form-data
-     */
     public function update(Request $request, $id)
     {
         $destination = Destination::findOrFail($id);
-
         $request->validate([
             'name'         => 'sometimes|required|string|max:255',
             'category'     => 'sometimes|required|string|max:100',
@@ -190,51 +199,62 @@ class DestinationController extends Controller
             'lng'          => 'nullable|numeric',
             'is_active'    => 'nullable|boolean',
             'photo'        => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
+            'gallery.*'    => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
         ]);
 
         $data = $request->only([
-            'name', 'category', 'location',
-            'ticket_price', 'open_hours', 'contact', 'social_media',
-            'address', 'description', 'lat', 'lng', 'is_active',
+            'name','category','location','ticket_price','open_hours',
+            'contact','social_media','address','description','lat','lng','is_active',
         ]);
-
-        // Upload foto baru jika ada; hapus foto lama
         if ($request->hasFile('photo')) {
-            if ($destination->photo_url) {
-                Storage::disk('public')->delete($destination->photo_url);
-            }
+            if ($destination->photo_url) Storage::disk('public')->delete($destination->photo_url);
             $data['photo_url'] = $request->file('photo')->store('destinations', 'public');
         }
-
         $destination->update($data);
 
-        $destination->photo_full_url = $destination->photo_url
-            ? asset('storage/' . $destination->photo_url)
-            : null;
+        // Append gallery photos
+        if ($request->hasFile('gallery')) {
+            $maxOrder = DestinationPhoto::where('destination_id', $destination->id)->max('sort_order') ?? -1;
+            foreach ($request->file('gallery') as $i => $file) {
+                $path = $file->store('destinations/gallery', 'public');
+                DestinationPhoto::create([
+                    'destination_id' => $destination->id,
+                    'photo_url'      => $path,
+                    'sort_order'     => $maxOrder + $i + 1,
+                ]);
+            }
+        }
 
+        $destination->photo_full_url = $destination->photo_url
+            ? asset('storage/' . $destination->photo_url) : null;
         return response()->json($destination);
     }
 
-    /**
-     * DELETE /api/admin/destinations/{id} (admin only)
-     */
+    // DELETE /api/admin/destinations/{id}/photos/{photoId}
+    public function deletePhoto($id, $photoId)
+    {
+        $photo = DestinationPhoto::where('destination_id', $id)->where('id', $photoId)->firstOrFail();
+        Storage::disk('public')->delete($photo->photo_url);
+        $photo->delete();
+        return response()->json(['message' => 'Foto dihapus']);
+    }
+
     public function destroy($id)
     {
         $destination = Destination::findOrFail($id);
-
-        // Hapus foto dari storage kalau ada
-        if ($destination->photo_url) {
-            Storage::disk('public')->delete($destination->photo_url);
+        if ($destination->photo_url) Storage::disk('public')->delete($destination->photo_url);
+        // Hapus semua gallery photos
+        foreach ($destination->photos as $photo) {
+            Storage::disk('public')->delete($photo->photo_url);
         }
-
+        $destination->photos()->delete();
         $destination->delete();
         return response()->json(['message' => 'Destinasi berhasil dihapus']);
     }
 
-    // ─── Helper Haversine ────────────────────────────────────────────────────
     private function haversine(float $lat1, float $lng1, float $lat2, float $lng2): float
     {
-        $R    = 6371; // radius bumi km
+        $R    = 6371;
         $dLat = deg2rad($lat2 - $lat1);
         $dLng = deg2rad($lng2 - $lng1);
         $a    = sin($dLat / 2) ** 2

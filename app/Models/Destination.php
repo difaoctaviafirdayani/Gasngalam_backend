@@ -1,7 +1,5 @@
 <?php
-
 namespace App\Models;
-
 use Illuminate\Database\Eloquent\Model;
 
 class Destination extends Model
@@ -14,7 +12,7 @@ class Destination extends Model
         'description',
         'photo_url',
         'lat', 'lng',
-        'emoji', 'color', 'gradient',  // tetap ada untuk backward-compat data lama
+        'emoji', 'color', 'gradient',
         'is_active',
     ];
 
@@ -26,18 +24,17 @@ class Destination extends Model
         'lng'          => 'float',
     ];
 
-    public function reviews()
-    {
+    public function reviews() {
         return $this->hasMany(Review::class);
     }
-
-    public function favorites()
-    {
+    public function favorites() {
         return $this->hasMany(Favorite::class);
     }
-
-    public function businessClaims()
-    {
+    public function businessClaims() {
         return $this->hasMany(BusinessClaim::class);
+    }
+    // Relasi baru: galeri foto
+    public function photos() {
+        return $this->hasMany(DestinationPhoto::class)->orderBy('sort_order');
     }
 }
