@@ -30,8 +30,26 @@ class ReviewController extends Controller
     }
 
     /**
+     * GET /api/user/reviews — ulasan milik user login
+     */
+    public function myReviews(Request $request)
+    {
+        $reviews = Review::with('destination:id,name,location')
+            ->where('user_id', $request->user()->id)
+            ->latest()
+            ->get()
+            ->map(function ($r) {
+                $r->photo_full_url = $r->photo_url
+                    ? asset('storage/' . $r->photo_url)
+                    : null;
+                return $r;
+            });
+
+        return response()->json($reviews);
+    }
+
+    /**
      * POST /api/destinations/{id}/reviews
-     * Menerima multipart/form-data karena ada upload foto opsional
      */
     public function store(Request $request, $destinationId)
     {
@@ -63,59 +81,53 @@ class ReviewController extends Controller
             'photo_url'      => $photoPath,
         ]);
 
-        $this->updateDestinationRating($destinationId);
+        // Update rating & review_count di destination
+        $destination = Destination::findOrFail($destinationId);
+        $avgRating   = Review::where('destination_id', $destinationId)->avg('rating');
+        $count       = Review::where('destination_id', $destinationId)->count();
+        $destination->update([
+            'rating'       => round($avgRating, 1),
+            'review_count' => $count,
+        ]);
 
         $review->load('user:id,name');
-        $review->photo_full_url = $review->photo_url
-            ? asset('storage/' . $review->photo_url)
-            : null;
+        $review->photo_full_url = $photoPath ? asset('storage/' . $photoPath) : null;
 
         return response()->json($review, 201);
     }
 
     /**
-     * POST /api/reviews/{id}/report  (user login)
-     * User melaporkan review untuk ditinjau admin
+     * POST /api/reviews/{id}/report
      */
     public function report(Request $request, $id)
     {
         $review = Review::findOrFail($id);
-
-        // Jangan bisa laporkan review sendiri
-        if ($review->user_id === $request->user()->id) {
-            return response()->json(['message' => 'Tidak bisa melaporkan ulasan sendiri.'], 422);
-        }
-
         $review->update(['is_reported' => true]);
-        return response()->json(['message' => 'Ulasan berhasil dilaporkan. Admin akan meninjau.']);
+        return response()->json(['message' => 'Ulasan berhasil dilaporkan.']);
     }
 
     /**
-     * DELETE /api/admin/reviews/{id}  (admin only)
+     * DELETE /api/admin/reviews/{id}
      */
     public function destroy($id)
     {
         $review = Review::findOrFail($id);
+
+        // Recalculate rating destination
         $destinationId = $review->destination_id;
 
         if ($review->photo_url) {
             Storage::disk('public')->delete($review->photo_url);
         }
-
         $review->delete();
-        $this->updateDestinationRating($destinationId);
 
-        return response()->json(['message' => 'Ulasan berhasil dihapus']);
-    }
-
-    private function updateDestinationRating($destinationId)
-    {
-        $avg   = Review::where('destination_id', $destinationId)->avg('rating') ?? 0;
-        $count = Review::where('destination_id', $destinationId)->count();
-
+        $avgRating = Review::where('destination_id', $destinationId)->avg('rating') ?? 0;
+        $count     = Review::where('destination_id', $destinationId)->count();
         Destination::where('id', $destinationId)->update([
-            'rating'       => round($avg, 1),
+            'rating'       => round($avgRating, 1),
             'review_count' => $count,
         ]);
+
+        return response()->json(['message' => 'Ulasan berhasil dihapus']);
     }
 }

@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\FavoriteController;
 use App\Http\Controllers\Api\BusinessClaimController;
 use App\Http\Controllers\Api\AdminController;
+use App\Http\Controllers\Api\NotificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -30,8 +31,13 @@ Route::get('/destinations/{id}/reviews', [ReviewController::class, 'index']);
 Route::middleware('auth:sanctum')->group(function () {
 
     // Auth
-    Route::post('/logout', [AuthController::class, 'logout']);
-    Route::get('/me',      [AuthController::class, 'me']);
+    Route::post('/logout',       [AuthController::class, 'logout']);
+    Route::get('/me',            [AuthController::class, 'me']);
+    Route::post('/user/profile', [AuthController::class, 'updateProfile']);
+
+    // User data
+    Route::get('/user/reviews', [ReviewController::class, 'myReviews']);
+    Route::get('/user/claims',  [BusinessClaimController::class, 'myKlaims']);
 
     // Favorites
     Route::get('/favorites',         [FavoriteController::class, 'index']);
@@ -46,6 +52,12 @@ Route::middleware('auth:sanctum')->group(function () {
     // Business Claims
     Route::post('/claims', [BusinessClaimController::class, 'store']);
 
+    // Notifications
+    Route::get('/notifications',              [NotificationController::class, 'index']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
+    Route::patch('/notifications/{id}/read',  [NotificationController::class, 'markRead']);
+    Route::patch('/notifications/read-all',   [NotificationController::class, 'markAllRead']);
+
     // ─── ADMIN ONLY ────────────────────────────────────────────────────────
     Route::middleware('admin')->prefix('admin')->group(function () {
 
@@ -57,9 +69,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/users/{id}', [AdminController::class, 'deleteUser']);
 
         // Destinations CRUD
-        Route::post('/destinations',        [DestinationController::class, 'store']);
-        Route::post('/destinations/{id}',   [DestinationController::class, 'update']); // POST karena FormData (foto)
-        Route::delete('/destinations/{id}', [DestinationController::class, 'destroy']);
+        Route::post('/destinations',                        [DestinationController::class, 'store']);
+        Route::post('/destinations/{id}',                   [DestinationController::class, 'update']);
+        Route::delete('/destinations/{id}',                 [DestinationController::class, 'destroy']);
+        Route::delete('/destinations/{id}/photos/{photoId}',[DestinationController::class, 'deletePhoto']);
 
         // Claims management
         Route::get('/claims',        [BusinessClaimController::class, 'index']);

@@ -10,19 +10,33 @@ use Illuminate\Support\Facades\Storage;
 class BusinessClaimController extends Controller
 {
     // GET /api/admin/claims
-    public function index(Request $request)
+    public function index()
     {
-        $claims = BusinessClaim::with(['destination:id,name', 'user:id,name,email'])
-            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
-            ->latest()
+        $claims = BusinessClaim::with(['user', 'destination'])
+            ->orderByDesc('created_at')
             ->get()
-            ->map(function ($claim) {
-                if ($claim->document_path) {
-                    $claim->document_url = asset('storage/' . $claim->document_path);
-                }
-                return $claim;
+            ->map(function ($c) {
+                $c->document_url = $c->document_path
+                    ? asset('storage/' . $c->document_path)
+                    : null;
+                return $c;
             });
+        return response()->json($claims);
+    }
 
+    // GET /api/user/claims — klaim milik user login
+    public function myKlaims(Request $request)
+    {
+        $claims = BusinessClaim::with('destination:id,name,location')
+            ->where('user_id', $request->user()->id)
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function ($c) {
+                $c->document_url = $c->document_path
+                    ? asset('storage/' . $c->document_path)
+                    : null;
+                return $c;
+            });
         return response()->json($claims);
     }
 
@@ -32,28 +46,27 @@ class BusinessClaimController extends Controller
         $request->validate([
             'destination_id' => 'required|exists:destinations,id',
             'full_name'      => 'required|string|max:255',
-            'email'          => 'required|email|max:255',
+            'email'          => 'required|email',
             'phone'          => 'required|string|max:20',
-            'description'    => 'required|string|min:5',
-            'document'       => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
+            'description'    => 'required|string',
+            'document'       => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
         ]);
 
-        // Cek sudah pernah klaim destinasi yang sama
-        $exists = BusinessClaim::where('user_id', $request->user()->id)
+        // Validasi duplikat: user tidak boleh klaim destinasi yang sama dua kali
+        $duplicate = BusinessClaim::where('user_id', $request->user()->id)
             ->where('destination_id', $request->destination_id)
             ->whereIn('status', ['pending', 'approved'])
             ->exists();
 
-        if ($exists) {
+        if ($duplicate) {
             return response()->json([
-                'message' => 'Anda sudah memiliki klaim untuk destinasi ini.',
+                'message' => 'Anda sudah pernah mengajukan klaim untuk destinasi ini.'
             ], 422);
         }
 
-        // Simpan file jika ada
-        $documentPath = null;
+        $docPath = null;
         if ($request->hasFile('document')) {
-            $documentPath = $request->file('document')->store('claims', 'public');
+            $docPath = $request->file('document')->store('claims', 'public');
         }
 
         $claim = BusinessClaim::create([
@@ -63,11 +76,11 @@ class BusinessClaimController extends Controller
             'email'          => $request->email,
             'phone'          => $request->phone,
             'description'    => $request->description,
-            'document_path'  => $documentPath,
+            'document_path'  => $docPath,
             'status'         => 'pending',
         ]);
 
-        return response()->json($claim->load(['destination:id,name', 'user:id,name']), 201);
+        return response()->json($claim, 201);
     }
 
     // PATCH /api/admin/claims/{id}

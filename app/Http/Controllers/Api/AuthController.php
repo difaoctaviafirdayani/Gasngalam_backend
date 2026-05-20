@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -34,7 +35,7 @@ class AuthController extends Controller
         $token = $user->createToken('gasngalam')->plainTextToken;
 
         return response()->json([
-            'user'  => $user,
+            'user'  => $this->formatUser($user),
             'token' => $token,
         ], 201);
     }
@@ -57,13 +58,10 @@ class AuthController extends Controller
             ]);
         }
 
-        // Hapus token lama (optional - single device login)
-        // $user->tokens()->delete();
-
         $token = $user->createToken('gasngalam')->plainTextToken;
 
         return response()->json([
-            'user'  => $user,
+            'user'  => $this->formatUser($user),
             'token' => $token,
         ]);
     }
@@ -74,7 +72,6 @@ class AuthController extends Controller
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
-
         return response()->json(['message' => 'Logout berhasil']);
     }
 
@@ -83,6 +80,56 @@ class AuthController extends Controller
      */
     public function me(Request $request)
     {
-        return response()->json($request->user());
+        return response()->json($this->formatUser($request->user()));
+    }
+
+    /**
+     * POST /api/user/profile
+     * Update nama, password, dan avatar
+     */
+    public function updateProfile(Request $request)
+    {
+        $user = $request->user();
+
+        $request->validate([
+            'name'                  => 'required|string|max:255',
+            'password'              => 'nullable|min:6|confirmed',
+            'password_confirmation' => 'nullable',
+            'avatar'                => 'nullable|image|mimes:jpg,jpeg,png,webp|max:3072',
+        ]);
+
+        $data = ['name' => $request->name];
+
+        if ($request->filled('password')) {
+            $data['password'] = Hash::make($request->password);
+        }
+
+        if ($request->hasFile('avatar')) {
+            // Hapus avatar lama jika ada
+            if ($user->avatar) {
+                Storage::disk('public')->delete($user->avatar);
+            }
+            $data['avatar'] = $request->file('avatar')->store('avatars', 'public');
+        }
+
+        $user->update($data);
+
+        return response()->json($this->formatUser($user->fresh()));
+    }
+
+    /**
+     * Format user response dengan avatar_url
+     */
+    private function formatUser(User $user): array
+    {
+        return [
+            'id'         => $user->id,
+            'name'       => $user->name,
+            'email'      => $user->email,
+            'phone'      => $user->phone ?? null,
+            'role'       => $user->role,
+            'avatar'     => $user->avatar,
+            'avatar_url' => $user->avatar ? asset('storage/' . $user->avatar) : null,
+        ];
     }
 }
