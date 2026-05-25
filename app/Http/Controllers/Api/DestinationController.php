@@ -33,9 +33,8 @@ class DestinationController extends Controller
             });
         }
 
-        // Filter harga — ambil semua dulu, filter di PHP agar tidak crash REGEXP
         if ($request->filled('free') && $request->free == '1') {
-            $query->where(function($q) {
+            $query->where(function ($q) {
                 $q->where('ticket_price', 'like', '%gratis%')
                   ->orWhere('ticket_price', 'like', '%Gratis%')
                   ->orWhere('ticket_price', '0')
@@ -54,16 +53,15 @@ class DestinationController extends Controller
             $query->orderBy($sort, $dir === 'asc' ? 'asc' : 'desc');
         }
 
-       $hasPhotosTable = Schema::hasTable('destination_photos');
-$destinations = $hasPhotosTable ? $query->with('photos')->get() : $query->get();
+        $hasPhotosTable = Schema::hasTable('destination_photos');
+        $destinations   = $hasPhotosTable ? $query->with('photos')->get() : $query->get();
 
-        // Filter harga min/max di PHP level (hindari REGEXP_REPLACE error)
         if ($request->filled('price_min') || $request->filled('price_max')) {
-            $priceMin = $request->filled('price_min') ? (int)$request->price_min : null;
-            $priceMax = $request->filled('price_max') ? (int)$request->price_max : null;
+            $priceMin = $request->filled('price_min') ? (int) $request->price_min : null;
+            $priceMax = $request->filled('price_max') ? (int) $request->price_max : null;
             $destinations = $destinations->filter(function ($d) use ($priceMin, $priceMax) {
                 preg_match('/\d+/', str_replace(['.', ','], '', $d->ticket_price ?? ''), $m);
-                $price = isset($m[0]) ? (int)$m[0] : 0;
+                $price = isset($m[0]) ? (int) $m[0] : 0;
                 if ($priceMin !== null && $price < $priceMin) return false;
                 if ($priceMax !== null && $price > $priceMax) return false;
                 return true;
@@ -88,14 +86,7 @@ $destinations = $hasPhotosTable ? $query->with('photos')->get() : $query->get();
 
         $destinations = $destinations->map(function ($d) {
             $d->photo_full_url = $d->photo_url ? asset('storage/' . $d->photo_url) : null;
-            $d->gallery = $d->photos->map(function ($p) {
-                return [
-                    'id'        => $p->id,
-                    'url'       => asset('storage/' . $p->photo_url),
-                    'caption'   => $p->caption,
-                    'sort_order'=> $p->sort_order,
-                ];
-            });
+            $d->gallery        = $this->buildGallery($d);
             return $d;
         });
 
@@ -104,25 +95,24 @@ $destinations = $hasPhotosTable ? $query->with('photos')->get() : $query->get();
 
     public function show($id)
     {
-        $d = Destination::with('photos')->findOrFail($id);
+        $hasPhotosTable = Schema::hasTable('destination_photos');
+        $d = $hasPhotosTable
+            ? Destination::with('photos')->findOrFail($id)
+            : Destination::findOrFail($id);
+
         $d->photo_full_url = $d->photo_url ? asset('storage/' . $d->photo_url) : null;
-        $d->gallery = $d->photos->map(function ($p) {
-            return [
-                'id'        => $p->id,
-                'url'       => asset('storage/' . $p->photo_url),
-                'caption'   => $p->caption,
-                'sort_order'=> $p->sort_order,
-            ];
-        });
+        $d->gallery        = $this->buildGallery($d);
+
         return response()->json($d);
     }
 
     public function categories()
     {
-        $fromDb = Destination::where('is_active', true)
+        $fromDb  = Destination::where('is_active', true)
             ->distinct()->pluck('category')->filter()->values()->toArray();
         $ordered = collect(self::CATEGORY_ORDER)->filter(fn($c) => in_array($c, $fromDb))->values();
-        $rest = collect($fromDb)->filter(fn($c) => !in_array($c, self::CATEGORY_ORDER))->values();
+        $rest    = collect($fromDb)->filter(fn($c) => !in_array($c, self::CATEGORY_ORDER))->values();
+
         return response()->json($ordered->merge($rest)->values());
     }
 
@@ -180,13 +170,17 @@ $destinations = $hasPhotosTable ? $query->with('photos')->get() : $query->get();
         }
 
         $destination->photo_full_url = $destination->photo_url
-            ? asset('storage/' . $destination->photo_url) : null;
+            ? asset('storage/' . $destination->photo_url)
+            : null;
+        $destination->gallery = $this->buildGallery($destination);
+
         return response()->json($destination, 201);
     }
 
     public function update(Request $request, $id)
     {
         $destination = Destination::findOrFail($id);
+
         $request->validate([
             'name'         => 'sometimes|required|string|max:255',
             'category'     => 'sometimes|required|string|max:100',
@@ -205,12 +199,14 @@ $destinations = $hasPhotosTable ? $query->with('photos')->get() : $query->get();
         ]);
 
         $data = $request->only([
-            'name','category','location','ticket_price','open_hours',
-            'contact','social_media','address','description','lat','lng','is_active',
+            'name', 'category', 'location', 'ticket_price', 'open_hours',
+            'contact', 'social_media', 'address', 'description', 'lat', 'lng', 'is_active',
         ]);
 
         if ($request->hasFile('photo')) {
-            if ($destination->photo_url) Storage::disk('public')->delete($destination->photo_url);
+            if ($destination->photo_url) {
+                Storage::disk('public')->delete($destination->photo_url);
+            }
             $data['photo_url'] = $request->file('photo')->store('destinations', 'public');
         }
 
@@ -229,28 +225,62 @@ $destinations = $hasPhotosTable ? $query->with('photos')->get() : $query->get();
         }
 
         $destination->photo_full_url = $destination->photo_url
-            ? asset('storage/' . $destination->photo_url) : null;
+            ? asset('storage/' . $destination->photo_url)
+            : null;
+        $destination->gallery = $this->buildGallery($destination->load('photos'));
+
         return response()->json($destination);
     }
 
     public function deletePhoto($id, $photoId)
     {
-        $photo = DestinationPhoto::where('destination_id', $id)->where('id', $photoId)->firstOrFail();
+        $photo = DestinationPhoto::where('destination_id', $id)
+            ->where('id', $photoId)
+            ->firstOrFail();
+
         Storage::disk('public')->delete($photo->photo_url);
         $photo->delete();
+
         return response()->json(['message' => 'Foto dihapus']);
     }
 
     public function destroy($id)
     {
         $destination = Destination::findOrFail($id);
-        if ($destination->photo_url) Storage::disk('public')->delete($destination->photo_url);
+
+        if ($destination->photo_url) {
+            Storage::disk('public')->delete($destination->photo_url);
+        }
+
         foreach ($destination->photos as $photo) {
             Storage::disk('public')->delete($photo->photo_url);
         }
+
         $destination->photos()->delete();
         $destination->delete();
+
         return response()->json(['message' => 'Destinasi berhasil dihapus']);
+    }
+
+    // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    private function buildGallery($destination): array
+    {
+        try {
+            if (!$destination->relationLoaded('photos')) {
+                return [];
+            }
+            return $destination->photos->map(function ($p) {
+                return [
+                    'id'         => $p->id,
+                    'url'        => asset('storage/' . $p->photo_url),
+                    'caption'    => $p->caption,
+                    'sort_order' => $p->sort_order,
+                ];
+            })->toArray();
+        } catch (\Exception $e) {
+            return [];
+        }
     }
 
     private function haversine(float $lat1, float $lng1, float $lat2, float $lng2): float

@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
@@ -21,10 +22,11 @@ class BusinessClaimController extends Controller
                     : null;
                 return $c;
             });
+
         return response()->json($claims);
     }
 
-    // GET /api/user/claims — klaim milik user login
+    // GET /api/user/claims
     public function myKlaims(Request $request)
     {
         $claims = BusinessClaim::with('destination:id,name,location')
@@ -37,6 +39,7 @@ class BusinessClaimController extends Controller
                     : null;
                 return $c;
             });
+
         return response()->json($claims);
     }
 
@@ -52,7 +55,6 @@ class BusinessClaimController extends Controller
             'document'       => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
         ]);
 
-        // Validasi duplikat: user tidak boleh klaim destinasi yang sama dua kali
         $duplicate = BusinessClaim::where('user_id', $request->user()->id)
             ->where('destination_id', $request->destination_id)
             ->whereIn('status', ['pending', 'approved'])
@@ -60,7 +62,7 @@ class BusinessClaimController extends Controller
 
         if ($duplicate) {
             return response()->json([
-                'message' => 'Anda sudah pernah mengajukan klaim untuk destinasi ini.'
+                'message' => 'Anda sudah pernah mengajukan klaim untuk destinasi ini.',
             ], 422);
         }
 
@@ -94,30 +96,39 @@ class BusinessClaimController extends Controller
         ]);
 
         $oldStatus = $claim->status;
+
         $claim->update([
             'status'      => $request->status,
             'admin_notes' => $request->admin_notes,
         ]);
 
-        // Kirim notifikasi ke user jika status berubah
+        // Kirim notifikasi jika status berubah
         if ($oldStatus !== $request->status && $claim->user_id) {
             $destName = $claim->destination->name ?? 'destinasi';
-            $statusLabel = match($request->status) {
-                'approved' => 'Disetujui ✅',
-                'rejected' => 'Ditolak ❌',
-                default    => 'Diproses 🔄',
+
+            $statusLabel = match ($request->status) {
+                'approved' => 'Disetujui',
+                'rejected' => 'Ditolak',
+                default    => 'Diproses',
             };
+
             $title = "Klaim Bisnis {$statusLabel}";
             $body  = "Pengajuan klaim untuk \"{$destName}\" telah {$statusLabel}.";
+
             if ($request->admin_notes) {
                 $body .= " Catatan admin: {$request->admin_notes}";
             }
+
             NotificationController::send(
                 $claim->user_id,
                 'claim_status',
                 $title,
                 $body,
-                ['claim_id' => $claim->id, 'destination_id' => $claim->destination_id, 'status' => $request->status]
+                [
+                    'claim_id'       => $claim->id,
+                    'destination_id' => $claim->destination_id,
+                    'status'         => $request->status,
+                ]
             );
         }
 

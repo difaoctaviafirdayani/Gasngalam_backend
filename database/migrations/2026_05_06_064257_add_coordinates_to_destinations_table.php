@@ -1,29 +1,20 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
+
+// Migration ini dikosongkan karena kolom koordinat sudah ditambahkan
+// di migration 2026_05_06_000001_add_photo_and_geo_to_destinations.php
+// sebagai kolom lat dan lng. Tidak perlu duplikat.
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
-        Schema::table('destinations', function (Blueprint $table) {
-            $table->decimal('latitude', 10, 7)->nullable()->after('location');
-            $table->decimal('longitude', 10, 7)->nullable()->after('latitude');
-        });
+        // Sudah ditangani oleh migration sebelumnya (lat, lng)
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        Schema::table('destinations', function (Blueprint $table) {
-            $table->dropColumn(['latitude', 'longitude']);
-        });
+        // Tidak ada yang perlu di-rollback
     }
 };

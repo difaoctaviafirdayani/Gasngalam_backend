@@ -11,9 +11,6 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    /**
-     * POST /api/register
-     */
     public function register(Request $request)
     {
         $request->validate([
@@ -40,9 +37,6 @@ class AuthController extends Controller
         ], 201);
     }
 
-    /**
-     * POST /api/login
-     */
     public function login(Request $request)
     {
         $request->validate([
@@ -66,27 +60,17 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * POST /api/logout
-     */
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
         return response()->json(['message' => 'Logout berhasil']);
     }
 
-    /**
-     * GET /api/me
-     */
     public function me(Request $request)
     {
         return response()->json($this->formatUser($request->user()));
     }
 
-    /**
-     * POST /api/user/profile
-     * Update nama, password, dan avatar
-     */
     public function updateProfile(Request $request)
     {
         $user = $request->user();
@@ -104,8 +88,10 @@ class AuthController extends Controller
             $data['password'] = Hash::make($request->password);
         }
 
+        \Log::info('FILES: ' . json_encode(array_keys($request->allFiles())));
+        \Log::info('HAS AVATAR: ' . ($request->hasFile('avatar') ? 'yes' : 'no'));
+
         if ($request->hasFile('avatar')) {
-            // Hapus avatar lama jika ada
             if ($user->avatar) {
                 Storage::disk('public')->delete($user->avatar);
             }
@@ -117,9 +103,6 @@ class AuthController extends Controller
         return response()->json($this->formatUser($user->fresh()));
     }
 
-    /**
-     * Format user response dengan avatar_url
-     */
     private function formatUser(User $user): array
     {
         return [
