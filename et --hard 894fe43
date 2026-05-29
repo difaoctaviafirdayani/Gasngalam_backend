@@ -1,0 +1,21 @@
+[33m2315e43[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m add views folder
+[33mc904181[m remove view:cache
+[33mff70c51[m upgrade to php 8.4
+[33mf785f57[m fix php version to 8.4
+[33m8c25aa4[m add Railway config
+[33m894fe43[m memperbaiki bagian backend yang kurang
+[33mbaf9e15[m update terbaru
+[33ma59c9e8[m update terbaru
+[33mb62a966[m update terbaru
+[33me44367f[m update terbaru
+[33me5ef760[m update terbaru
+[33m20957cf[m update backend controller dan log
+[33m2bde9ac[m update backend fitur notification dan photo
+[33me22ed0c[m fix: configure CORS for frontend API access
+[33m31a7709[m fix: storage symlink, reset admin password
+[33m5dc5267[m pesan perubahan
+[33m3f0af77[m tambah fitur map & perbaikan form
+[33m7562430[m backup
+[33m771ff49[m fitur geolocation
+[33m39ed282[m update filter terdekat dan populer
+[33m975d866[m first upload

@@ -35,6 +35,6 @@ class Destination extends Model
     }
     // Relasi baru: galeri foto
     public function photos() {
-        return $this->hasMany(DestinationPhoto::class)->orderBy('sort_order');
+        return $this->hasMany(DestinationPhoto::class)->orderBy('sort_order', 'asc');
     }
 }
