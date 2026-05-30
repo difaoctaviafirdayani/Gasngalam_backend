@@ -4,27 +4,22 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\BusinessClaim;
-use App\Models\Destination;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class BusinessClaimController extends Controller
 {
-    // Helper untuk build URL dokumen yang pakai APP_URL (ngrok)
-    private function buildDocumentUrl(?string $path): ?string
-    {
-        if (!$path) return null;
-        return rtrim(config('app.url'), '/') . '/storage/' . $path;
-    }
-
     // GET /api/admin/claims
     public function index()
     {
+        $appUrl = rtrim(env('APP_URL', 'http://127.0.0.1:8000'), '/');
+
         $claims = BusinessClaim::with(['user', 'destination'])
             ->orderByDesc('created_at')
             ->get()
-            ->map(function ($c) {
-                $c->document_url = $this->buildDocumentUrl($c->document_path);
+            ->map(function ($c) use ($appUrl) {
+                $c->document_url = $c->document_path
+                    ? $appUrl . '/storage/' . $c->document_path
+                    : null;
                 return $c;
             });
 
@@ -34,12 +29,16 @@ class BusinessClaimController extends Controller
     // GET /api/user/claims
     public function myKlaims(Request $request)
     {
+        $appUrl = rtrim(env('APP_URL', 'http://127.0.0.1:8000'), '/');
+
         $claims = BusinessClaim::with('destination:id,name,location')
             ->where('user_id', $request->user()->id)
             ->orderByDesc('created_at')
             ->get()
-            ->map(function ($c) {
-                $c->document_url = $this->buildDocumentUrl($c->document_path);
+            ->map(function ($c) use ($appUrl) {
+                $c->document_url = $c->document_path
+                    ? $appUrl . '/storage/' . $c->document_path
+                    : null;
                 return $c;
             });
 
@@ -94,6 +93,8 @@ class BusinessClaimController extends Controller
     // PATCH /api/admin/claims/{id}
     public function update(Request $request, $id)
     {
+        $appUrl = rtrim(env('APP_URL', 'http://127.0.0.1:8000'), '/');
+
         $claim = BusinessClaim::with(['user', 'destination'])->findOrFail($id);
 
         $request->validate([
@@ -108,10 +109,8 @@ class BusinessClaimController extends Controller
             'admin_notes' => $request->admin_notes,
         ]);
 
-        // Kirim notifikasi jika status berubah
         if ($oldStatus !== $request->status && $claim->user_id) {
-            $destName = $claim->destination->name ?? 'destinasi';
-
+            $destName    = $claim->destination->name ?? 'destinasi';
             $statusLabel = match ($request->status) {
                 'approved' => 'Disetujui',
                 'rejected' => 'Ditolak',
@@ -120,7 +119,6 @@ class BusinessClaimController extends Controller
 
             $title = "Klaim Bisnis {$statusLabel}";
             $body  = "Pengajuan klaim untuk \"{$destName}\" telah {$statusLabel}.";
-
             if ($request->admin_notes) {
                 $body .= " Catatan admin: {$request->admin_notes}";
             }
@@ -139,7 +137,9 @@ class BusinessClaimController extends Controller
         }
 
         $updated = $claim->fresh(['user', 'destination']);
-        $updated->document_url = $this->buildDocumentUrl($updated->document_path);
+        $updated->document_url = $updated->document_path
+            ? $appUrl . '/storage/' . $updated->document_path
+            : null;
 
         return response()->json($updated);
     }
