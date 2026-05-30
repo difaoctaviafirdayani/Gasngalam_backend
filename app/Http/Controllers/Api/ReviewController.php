@@ -10,14 +10,11 @@ use Illuminate\Support\Facades\Storage;
 
 class ReviewController extends Controller
 {
-    /**
-     * GET /api/destinations/{id}/reviews
-     */
     public function index($destinationId)
     {
         $reviews = Review::with('user:id,name')
             ->where('destination_id', $destinationId)
-            ->latest()
+            ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($r) {
                 $r->photo_full_url = $r->photo_url
@@ -29,14 +26,11 @@ class ReviewController extends Controller
         return response()->json($reviews);
     }
 
-    /**
-     * GET /api/user/reviews — ulasan milik user login
-     */
     public function myReviews(Request $request)
     {
         $reviews = Review::with('destination:id,name,location')
             ->where('user_id', $request->user()->id)
-            ->latest()
+            ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($r) {
                 $r->photo_full_url = $r->photo_url
@@ -48,9 +42,6 @@ class ReviewController extends Controller
         return response()->json($reviews);
     }
 
-    /**
-     * POST /api/destinations/{id}/reviews
-     */
     public function store(Request $request, $destinationId)
     {
         $request->validate([
@@ -59,7 +50,6 @@ class ReviewController extends Controller
             'photo'   => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
         ]);
 
-        // Cek sudah pernah review
         $exists = Review::where('user_id', $request->user()->id)
             ->where('destination_id', $destinationId)
             ->exists();
@@ -81,7 +71,6 @@ class ReviewController extends Controller
             'photo_url'      => $photoPath,
         ]);
 
-        // Update rating & review_count di destination
         $destination = Destination::findOrFail($destinationId);
         $avgRating   = Review::where('destination_id', $destinationId)->avg('rating');
         $count       = Review::where('destination_id', $destinationId)->count();
@@ -96,9 +85,6 @@ class ReviewController extends Controller
         return response()->json($review, 201);
     }
 
-    /**
-     * POST /api/reviews/{id}/report
-     */
     public function report(Request $request, $id)
     {
         $review = Review::findOrFail($id);
@@ -106,14 +92,9 @@ class ReviewController extends Controller
         return response()->json(['message' => 'Ulasan berhasil dilaporkan.']);
     }
 
-    /**
-     * DELETE /api/admin/reviews/{id}
-     */
     public function destroy($id)
     {
         $review = Review::findOrFail($id);
-
-        // Recalculate rating destination
         $destinationId = $review->destination_id;
 
         if ($review->photo_url) {

@@ -10,6 +10,13 @@ use Illuminate\Support\Facades\Storage;
 
 class BusinessClaimController extends Controller
 {
+    // Helper untuk build URL dokumen yang pakai APP_URL (ngrok)
+    private function buildDocumentUrl(?string $path): ?string
+    {
+        if (!$path) return null;
+        return rtrim(config('app.url'), '/') . '/storage/' . $path;
+    }
+
     // GET /api/admin/claims
     public function index()
     {
@@ -17,9 +24,7 @@ class BusinessClaimController extends Controller
             ->orderByDesc('created_at')
             ->get()
             ->map(function ($c) {
-                $c->document_url = $c->document_path
-                    ? asset('storage/' . $c->document_path)
-                    : null;
+                $c->document_url = $this->buildDocumentUrl($c->document_path);
                 return $c;
             });
 
@@ -34,9 +39,7 @@ class BusinessClaimController extends Controller
             ->orderByDesc('created_at')
             ->get()
             ->map(function ($c) {
-                $c->document_url = $c->document_path
-                    ? asset('storage/' . $c->document_path)
-                    : null;
+                $c->document_url = $this->buildDocumentUrl($c->document_path);
                 return $c;
             });
 
@@ -52,7 +55,7 @@ class BusinessClaimController extends Controller
             'email'          => 'required|email',
             'phone'          => 'required|string|max:20',
             'description'    => 'required|string',
-            'document'       => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+            'document'       => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
         ]);
 
         $duplicate = BusinessClaim::where('user_id', $request->user()->id)
@@ -82,7 +85,10 @@ class BusinessClaimController extends Controller
             'status'         => 'pending',
         ]);
 
-        return response()->json($claim, 201);
+        return response()->json([
+            'message' => 'Klaim berhasil dikirim.',
+            'claim'   => $claim,
+        ], 201);
     }
 
     // PATCH /api/admin/claims/{id}
@@ -132,6 +138,9 @@ class BusinessClaimController extends Controller
             );
         }
 
-        return response()->json($claim->fresh(['user', 'destination']));
+        $updated = $claim->fresh(['user', 'destination']);
+        $updated->document_url = $this->buildDocumentUrl($updated->document_path);
+
+        return response()->json($updated);
     }
 }

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\Api;
 
@@ -11,10 +11,6 @@ use Illuminate\Http\Request;
 
 class AdminController extends Controller
 {
-    /**
-     * GET /api/admin/stats
-     * Statistik dashboard admin
-     */
     public function stats()
     {
         return response()->json([
@@ -26,10 +22,6 @@ class AdminController extends Controller
         ]);
     }
 
-    /**
-     * GET /api/admin/users
-     * List semua user
-     */
     public function users()
     {
         $users = User::select('id', 'name', 'email', 'phone', 'role', 'created_at')
@@ -39,41 +31,25 @@ class AdminController extends Controller
         return response()->json($users);
     }
 
-    /**
-     * DELETE /api/admin/users/{id}
-     * Hapus user
-     */
     public function deleteUser($id)
     {
         $user = User::findOrFail($id);
-
         if ($user->role === 'admin') {
             return response()->json(['message' => 'Tidak bisa menghapus admin'], 403);
         }
-
         $user->delete();
         return response()->json(['message' => 'User berhasil dihapus']);
     }
 
-    /**
-     * GET /api/admin/reviews
-     * List semua ulasan (admin bisa lihat semua, termasuk yang dilaporkan)
-     */
     public function reviews(Request $request)
     {
         $query = Review::with(['user:id,name', 'destination:id,name']);
-
         if ($request->boolean('reported')) {
             $query->where('is_reported', true);
         }
-
-        return response()->json($query->latest()->get());
+        return response()->json($query->orderBy('created_at', 'desc')->get());
     }
 
-    /**
-     * PATCH /api/admin/reviews/{id}/report
-     * Toggle flag laporan ulasan
-     */
     public function toggleReport($id)
     {
         $review = Review::findOrFail($id);

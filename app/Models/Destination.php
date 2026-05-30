@@ -33,7 +33,6 @@ class Destination extends Model
     public function businessClaims() {
         return $this->hasMany(BusinessClaim::class);
     }
-    // Relasi baru: galeri foto
     public function photos() {
         return $this->hasMany(DestinationPhoto::class)->orderBy('sort_order', 'asc');
     }
