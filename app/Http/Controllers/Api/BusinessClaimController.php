@@ -14,8 +14,7 @@ class BusinessClaimController extends Controller
         $appUrl = rtrim(env('APP_URL', 'http://127.0.0.1:8000'), '/');
 
         $claims = BusinessClaim::with(['user', 'destination'])
-            ->orderByDesc('created_at')
-            ->get()
+            ->orderBy('created_at', 'desc')            ->get()
             ->map(function ($c) use ($appUrl) {
                 $c->document_url = $c->document_path
                     ? $appUrl . '/storage/' . $c->document_path
@@ -33,8 +32,7 @@ class BusinessClaimController extends Controller
 
         $claims = BusinessClaim::with('destination:id,name,location')
             ->where('user_id', $request->user()->id)
-            ->orderByDesc('created_at')
-            ->get()
+            ->orderBy('created_at', 'desc')            ->get()
             ->map(function ($c) use ($appUrl) {
                 $c->document_url = $c->document_path
                     ? $appUrl . '/storage/' . $c->document_path
