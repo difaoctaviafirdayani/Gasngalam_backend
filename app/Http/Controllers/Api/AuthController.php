@@ -88,9 +88,6 @@ class AuthController extends Controller
             $data['password'] = Hash::make($request->password);
         }
 
-        \Log::info('FILES: ' . json_encode(array_keys($request->allFiles())));
-        \Log::info('HAS AVATAR: ' . ($request->hasFile('avatar') ? 'yes' : 'no'));
-
         if ($request->hasFile('avatar')) {
             if ($user->avatar) {
                 Storage::disk('public')->delete($user->avatar);
@@ -105,6 +102,7 @@ class AuthController extends Controller
 
     private function formatUser(User $user): array
     {
+        $appUrl = rtrim(env('APP_URL', 'http://127.0.0.1:8000'), '/');
         return [
             'id'         => $user->id,
             'name'       => $user->name,
@@ -112,7 +110,7 @@ class AuthController extends Controller
             'phone'      => $user->phone ?? null,
             'role'       => $user->role,
             'avatar'     => $user->avatar,
-            'avatar_url' => $user->avatar ? asset('storage/' . $user->avatar) : null,
+            'avatar_url' => $user->avatar ? $appUrl . '/storage/' . $user->avatar : null,
         ];
     }
 }
