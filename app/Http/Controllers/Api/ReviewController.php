@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\Api;
 
@@ -10,6 +10,12 @@ use Illuminate\Support\Facades\Storage;
 
 class ReviewController extends Controller
 {
+    private function photoUrl(?string $path): ?string
+    {
+        if (!$path) return null;
+        return rtrim(env('APP_URL', 'http://127.0.0.1:8000'), '/') . '/storage/' . $path;
+    }
+
     public function index($destinationId)
     {
         $reviews = Review::with('user:id,name')
@@ -17,9 +23,7 @@ class ReviewController extends Controller
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($r) {
-                $r->photo_full_url = $r->photo_url
-                    ? asset('storage/' . $r->photo_url)
-                    : null;
+                $r->photo_full_url = $this->photoUrl($r->photo_url);
                 return $r;
             });
 
@@ -33,9 +37,7 @@ class ReviewController extends Controller
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($r) {
-                $r->photo_full_url = $r->photo_url
-                    ? asset('storage/' . $r->photo_url)
-                    : null;
+                $r->photo_full_url = $this->photoUrl($r->photo_url);
                 return $r;
             });
 
@@ -80,7 +82,7 @@ class ReviewController extends Controller
         ]);
 
         $review->load('user:id,name');
-        $review->photo_full_url = $photoPath ? asset('storage/' . $photoPath) : null;
+        $review->photo_full_url = $this->photoUrl($photoPath);
 
         return response()->json($review, 201);
     }
