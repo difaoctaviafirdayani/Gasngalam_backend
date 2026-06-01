@@ -5,45 +5,46 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\BusinessClaim;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class BusinessClaimController extends Controller
 {
-    // GET /api/admin/claims
+    private function docUrl(?string $path): ?string
+    {
+        if (!$path) return null;
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+            return $path;
+        }
+        return rtrim(env('APP_URL', 'http://127.0.0.1:8000'), '/') . '/storage/' . $path;
+    }
+
     public function index()
     {
-        $appUrl = rtrim(env('APP_URL', 'http://127.0.0.1:8000'), '/');
-
         $claims = BusinessClaim::with(['user', 'destination'])
-            ->orderBy('created_at', 'desc')            ->get()
-            ->map(function ($c) use ($appUrl) {
-                $c->document_url = $c->document_path
-                    ? $appUrl . '/storage/' . $c->document_path
-                    : null;
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($c) {
+                $c->document_url = $this->docUrl($c->document_path);
                 return $c;
             });
 
         return response()->json($claims);
     }
 
-    // GET /api/user/claims
     public function myKlaims(Request $request)
     {
-        $appUrl = rtrim(env('APP_URL', 'http://127.0.0.1:8000'), '/');
-
         $claims = BusinessClaim::with('destination:id,name,location')
             ->where('user_id', $request->user()->id)
-            ->orderBy('created_at', 'desc')            ->get()
-            ->map(function ($c) use ($appUrl) {
-                $c->document_url = $c->document_path
-                    ? $appUrl . '/storage/' . $c->document_path
-                    : null;
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($c) {
+                $c->document_url = $this->docUrl($c->document_path);
                 return $c;
             });
 
         return response()->json($claims);
     }
 
-    // POST /api/claims
     public function store(Request $request)
     {
         $request->validate([
@@ -88,11 +89,8 @@ class BusinessClaimController extends Controller
         ], 201);
     }
 
-    // PATCH /api/admin/claims/{id}
     public function update(Request $request, $id)
     {
-        $appUrl = rtrim(env('APP_URL', 'http://127.0.0.1:8000'), '/');
-
         $claim = BusinessClaim::with(['user', 'destination'])->findOrFail($id);
 
         $request->validate([
@@ -135,9 +133,7 @@ class BusinessClaimController extends Controller
         }
 
         $updated = $claim->fresh(['user', 'destination']);
-        $updated->document_url = $updated->document_path
-            ? $appUrl . '/storage/' . $updated->document_path
-            : null;
+        $updated->document_url = $this->docUrl($updated->document_path);
 
         return response()->json($updated);
     }

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\Api;
 
@@ -13,6 +13,9 @@ class ReviewController extends Controller
     private function photoUrl(?string $path): ?string
     {
         if (!$path) return null;
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+            return $path;
+        }
         return rtrim(env('APP_URL', 'http://127.0.0.1:8000'), '/') . '/storage/' . $path;
     }
 
